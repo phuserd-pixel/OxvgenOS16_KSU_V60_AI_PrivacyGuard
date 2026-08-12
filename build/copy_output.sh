@@ -1,44 +1,74 @@
 #!/bin/bash
 set -e
 
-echo "[*] Preparing output directory..."
+ROOT=$(cd "$(dirname "$0")/.." && pwd)
 
-MODULE_DIR="../module"
-BIN_DIR="$MODULE_DIR/bin"
+echo "=============================="
+echo " OxGuard Copy Output"
+echo "=============================="
 
-mkdir -p "$BIN_DIR"
+BUILD_DIR="$ROOT/build/native_build"
+MODULE_DIR="$ROOT/module/bin"
 
-echo "[*] Searching native binary..."
+mkdir -p "$MODULE_DIR"
 
-if [ -f "../native_build/oxguard_daemon" ]; then
-    echo "[+] Found oxguard_daemon"
-    cp "../native_build/oxguard_daemon" "$BIN_DIR/oxguard"
+echo "[*] Checking build output..."
 
-elif [ -f "../native_build/oxguard" ]; then
-    echo "[+] Found oxguard"
-    cp "../native_build/oxguard" "$BIN_DIR/oxguard"
-
-else
-    echo "[!] ERROR: oxguard binary not found"
-    echo "Available files:"
-    find .. -type f -name "*oxguard*" || true
+if [ ! -d "$BUILD_DIR" ]; then
+    echo "[ERROR] build directory not found:"
+    echo "$BUILD_DIR"
     exit 1
 fi
 
 
-echo "[*] Searching zygisk library..."
+echo "[*] Available files:"
+ls -lh "$BUILD_DIR"
 
-mkdir -p "$MODULE_DIR/zygisk"
 
-if [ -f "../zygisk_build/liboxhook.so" ]; then
-    cp "../zygisk_build/liboxhook.so" "$MODULE_DIR/zygisk/"
+echo "[*] Copy oxguard daemon..."
+
+if [ -f "$BUILD_DIR/oxguard_daemon" ]; then
+
+    cp "$BUILD_DIR/oxguard_daemon" \
+    "$MODULE_DIR/oxguard_daemon"
+
+    chmod 755 "$MODULE_DIR/oxguard_daemon"
+
+    echo "[OK] oxguard_daemon copied"
+
 else
-    echo "[!] Warning: liboxhook.so not found"
+
+    echo "[ERROR] oxguard_daemon missing"
+    exit 1
+
 fi
 
 
-chmod 755 "$BIN_DIR/oxguard" || true
 
-echo "[+] Copy output finished"
+echo "[*] Copy zygisk library..."
 
-ls -R "$MODULE_DIR"
+if [ -f "$BUILD_DIR/liboxguard.so" ]; then
+
+    cp "$BUILD_DIR/liboxguard.so" \
+    "$MODULE_DIR/liboxguard.so"
+
+    chmod 644 "$MODULE_DIR/liboxguard.so"
+
+    echo "[OK] liboxguard.so copied"
+
+else
+
+    echo "[ERROR] liboxguard.so missing"
+    exit 1
+
+fi
+
+
+
+echo "=============================="
+echo " Final module/bin:"
+echo "=============================="
+
+ls -lh "$MODULE_DIR"
+
+echo "[SUCCESS] Copy finished"
