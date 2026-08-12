@@ -8,9 +8,34 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
 
-      - name: Test
+      - name: Install build tools
         run: |
-          echo "GitHub Actions OK"
-        
+          sudo apt update
+          sudo apt install -y cmake ninja-build zip unzip wget
+
+      - name: Setup Android NDK
+        run: |
+          wget https://dl.google.com/android/repository/android-ndk-r27-linux.zip
+          unzip android-ndk-r27-linux.zip
+          echo "ANDROID_NDK_HOME=$PWD/android-ndk-r27" >> $GITHUB_ENV
+
+      - name: Build module
+        run: |
+          chmod +x build/*.sh || true
+          cd build
+          ./build_all.sh
+
+      - name: Find output
+        run: |
+          find . -name "*.zip"
+
+      - name: Upload KSU module
+        uses: actions/upload-artifact@v4
+        with:
+          name: OxvgenOS16_KSU_V60_FINAL_COMPILED
+          path: |
+            ./**/*.zip
+          if-no-files-found: error
