@@ -1,0 +1,6 @@
+id=adblock_global
+name=AdBlock Global
+version=1.0.0
+versionCode=100
+author=phuserd-pixel
+description=Global network advertisement blocker for KernelSU
