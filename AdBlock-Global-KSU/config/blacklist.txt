@@ -1,0 +1,10 @@
+doubleclick.net
+googleadservices.com
+googlesyndication.com
+app-measurement.com
+adservice.google.com
+ads.facebook.com
+analytics.facebook.com
+umeng.com
+unityads.com
+applovin.com
