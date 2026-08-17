@@ -22,12 +22,14 @@ import android.text.TextWatcher;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.WindowInsets;
 import android.view.WindowManager;
 import android.widget.AdapterView;
 import android.widget.BaseAdapter;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.FrameLayout;
+import android.widget.HorizontalScrollView;
 import android.widget.LinearLayout;
 import android.widget.ListView;
 import android.widget.MediaController;
@@ -51,6 +53,7 @@ public class MainActivity extends Activity {
     private final ArrayList<VideoItem> allVideos = new ArrayList<>();
     private final ArrayList<VideoItem> visibleVideos = new ArrayList<>();
 
+    private LinearLayout rootLayout;
     private LinearLayout libraryPanel;
     private View toolbarView;
     private AdaptiveVideoView videoView;
@@ -154,10 +157,11 @@ public class MainActivity extends Activity {
     private void buildLayout() {
         boolean landscape = getResources().getConfiguration().orientation == Configuration.ORIENTATION_LANDSCAPE;
 
-        LinearLayout rootLayout = new LinearLayout(this);
+        rootLayout = new LinearLayout(this);
         rootLayout.setOrientation(landscape ? LinearLayout.HORIZONTAL : LinearLayout.VERTICAL);
         rootLayout.setBackgroundColor(COLOR_BACKGROUND);
         setContentView(rootLayout);
+        installSystemBarInsets(rootLayout);
 
         LinearLayout playerPanel = new LinearLayout(this);
         playerPanel.setOrientation(LinearLayout.VERTICAL);
@@ -203,19 +207,29 @@ public class MainActivity extends Activity {
     }
 
     private View buildToolbar() {
+        HorizontalScrollView toolbarScroll = new HorizontalScrollView(this);
+        toolbarScroll.setBackgroundColor(COLOR_PANEL);
+        toolbarScroll.setFillViewport(false);
+        toolbarScroll.setHorizontalScrollBarEnabled(false);
+        toolbarScroll.setOverScrollMode(View.OVER_SCROLL_NEVER);
+
         LinearLayout toolbar = new LinearLayout(this);
         toolbar.setOrientation(LinearLayout.HORIZONTAL);
         toolbar.setGravity(Gravity.CENTER_VERTICAL);
-        toolbar.setPadding(dp(12), dp(10), dp(12), dp(10));
+        toolbar.setPadding(dp(8), dp(8), dp(8), dp(8));
         toolbar.setBackgroundColor(COLOR_PANEL);
+        toolbarScroll.addView(toolbar, new HorizontalScrollView.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+        ));
 
         nowPlayingView = new TextView(this);
         nowPlayingView.setText(currentTitle);
         nowPlayingView.setTextColor(COLOR_TEXT);
-        nowPlayingView.setTextSize(16);
+        nowPlayingView.setTextSize(14);
         nowPlayingView.setSingleLine(true);
         nowPlayingView.setEllipsize(TextUtils.TruncateAt.END);
-        toolbar.addView(nowPlayingView, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1.0f));
+        toolbar.addView(nowPlayingView, new LinearLayout.LayoutParams(dp(112), ViewGroup.LayoutParams.WRAP_CONTENT));
 
         Button pickButton = toolbarButton("选择");
         pickButton.setOnClickListener(v -> openSystemPicker());
@@ -241,7 +255,7 @@ public class MainActivity extends Activity {
         fullScreenButton.setOnClickListener(v -> setFullScreen(!fullScreen));
         toolbar.addView(fullScreenButton);
 
-        return toolbar;
+        return toolbarScroll;
     }
 
     private View buildPlaybackControlRow() {
@@ -406,15 +420,56 @@ public class MainActivity extends Activity {
         button.setAllCaps(false);
         button.setMinHeight(0);
         button.setMinWidth(0);
-        button.setPadding(dp(10), dp(6), dp(10), dp(6));
+        button.setMinimumHeight(0);
+        button.setMinimumWidth(0);
+        button.setIncludeFontPadding(false);
+        button.setPadding(dp(10), dp(8), dp(10), dp(8));
         button.setBackgroundColor(COLOR_DIVIDER);
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT
         );
-        params.leftMargin = dp(8);
+        params.leftMargin = dp(6);
         button.setLayoutParams(params);
         return button;
+    }
+
+    private void installSystemBarInsets(View target) {
+        if (target == null || Build.VERSION.SDK_INT < Build.VERSION_CODES.KITKAT_WATCH) {
+            return;
+        }
+        target.setOnApplyWindowInsetsListener((view, insets) -> {
+            int left = 0;
+            int top = 0;
+            int right = 0;
+            int bottom = 0;
+            try {
+                if (!fullScreen) {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                        android.graphics.Insets bars = insets.getInsets(
+                                WindowInsets.Type.statusBars()
+                                        | WindowInsets.Type.navigationBars()
+                                        | WindowInsets.Type.displayCutout()
+                        );
+                        left = bars.left;
+                        top = bars.top;
+                        right = bars.right;
+                        bottom = bars.bottom;
+                    } else {
+                        left = insets.getSystemWindowInsetLeft();
+                        top = insets.getSystemWindowInsetTop();
+                        right = insets.getSystemWindowInsetRight();
+                        bottom = insets.getSystemWindowInsetBottom();
+                    }
+                }
+                view.setPadding(left, top, right, bottom);
+            } catch (Throwable throwable) {
+                PlayerApplication.writeCrash(this, throwable);
+                view.setPadding(0, dp(24), 0, 0);
+            }
+            return insets;
+        });
+        target.post(target::requestApplyInsets);
     }
 
     private void restoreSettings() {
@@ -756,6 +811,9 @@ public class MainActivity extends Activity {
         }
         if (libraryPanel != null) {
             libraryPanel.setVisibility(enabled ? View.GONE : View.VISIBLE);
+        }
+        if (rootLayout != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT_WATCH) {
+            rootLayout.requestApplyInsets();
         }
         applyFullScreenFlags(enabled);
     }
