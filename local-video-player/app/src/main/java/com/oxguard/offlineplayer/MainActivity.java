@@ -10,6 +10,7 @@ import android.content.res.Configuration;
 import android.database.Cursor;
 import android.graphics.Color;
 import android.graphics.drawable.ColorDrawable;
+import android.media.MediaPlayer;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
@@ -30,8 +31,8 @@ import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.ListView;
 import android.widget.MediaController;
+import android.widget.SeekBar;
 import android.widget.TextView;
-import android.widget.VideoView;
 
 import java.util.ArrayList;
 import java.util.Locale;
@@ -52,19 +53,26 @@ public class MainActivity extends Activity {
 
     private LinearLayout libraryPanel;
     private View toolbarView;
-    private VideoView videoView;
+    private AdaptiveVideoView videoView;
     private TextView nowPlayingView;
     private TextView stateView;
     private TextView countView;
+    private TextView volumeView;
+    private Button resizeModeButton;
+    private Button clarityButton;
     private EditText searchView;
     private VideoAdapter videoAdapter;
     private MediaController mediaController;
     private SharedPreferences preferences;
 
     private Uri currentUri;
+    private MediaPlayer activeMediaPlayer;
     private String currentTitle = "未选择视频";
     private int pendingSeekMs;
+    private int resizeMode = AdaptiveVideoView.MODE_FIT;
+    private float appVolume = 1.0f;
     private boolean fullScreen;
+    private boolean clarityMode;
     private boolean playWhenReady = true;
 
     @Override
@@ -72,13 +80,22 @@ public class MainActivity extends Activity {
         super.onCreate(savedInstanceState);
         try {
             preferences = getSharedPreferences("offline_player", MODE_PRIVATE);
+            restoreSettings();
             buildLayoutSafely();
             showPreviousCrashIfAny();
             loadVideosIfPermitted(false);
+            handleIncomingIntent(getIntent());
         } catch (Throwable throwable) {
             PlayerApplication.writeCrash(this, throwable);
             showFallbackCrashScreen(throwable);
         }
+    }
+
+    @Override
+    protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        setIntent(intent);
+        handleIncomingIntent(intent);
     }
 
     @Override
@@ -163,6 +180,10 @@ public class MainActivity extends Activity {
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT
         ));
+        playerPanel.addView(buildPlaybackControlRow(), new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+        ));
         playerPanel.addView(buildVideoFrame(), new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 0,
@@ -208,6 +229,14 @@ public class MainActivity extends Activity {
         resumeButton.setOnClickListener(v -> resumeLastPlayback());
         toolbar.addView(resumeButton);
 
+        resizeModeButton = toolbarButton(resizeModeText());
+        resizeModeButton.setOnClickListener(v -> cycleResizeMode());
+        toolbar.addView(resizeModeButton);
+
+        clarityButton = toolbarButton(clarityMode ? "清晰开" : "清晰关");
+        clarityButton.setOnClickListener(v -> toggleClarityMode());
+        toolbar.addView(clarityButton);
+
         Button fullScreenButton = toolbarButton(fullScreen ? "退出" : "全屏");
         fullScreenButton.setOnClickListener(v -> setFullScreen(!fullScreen));
         toolbar.addView(fullScreenButton);
@@ -215,16 +244,59 @@ public class MainActivity extends Activity {
         return toolbar;
     }
 
+    private View buildPlaybackControlRow() {
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setPadding(dp(12), dp(6), dp(12), dp(6));
+        row.setBackgroundColor(COLOR_BACKGROUND);
+
+        volumeView = new TextView(this);
+        volumeView.setTextColor(COLOR_TEXT_SECONDARY);
+        volumeView.setTextSize(13);
+        updateVolumeText();
+        row.addView(volumeView, new LinearLayout.LayoutParams(dp(76), ViewGroup.LayoutParams.WRAP_CONTENT));
+
+        SeekBar volumeSeekBar = new SeekBar(this);
+        volumeSeekBar.setMax(100);
+        volumeSeekBar.setProgress(Math.round(appVolume * 100));
+        volumeSeekBar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+            @Override
+            public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
+                appVolume = Math.max(0.0f, Math.min(1.0f, progress / 100.0f));
+                updateVolumeText();
+                applyAppVolume();
+                saveSettings();
+            }
+
+            @Override
+            public void onStartTrackingTouch(SeekBar seekBar) {
+            }
+
+            @Override
+            public void onStopTrackingTouch(SeekBar seekBar) {
+            }
+        });
+        row.addView(volumeSeekBar, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1.0f));
+
+        return row;
+    }
+
     private View buildVideoFrame() {
         FrameLayout frame = new FrameLayout(this);
         frame.setBackgroundColor(Color.BLACK);
 
-        videoView = new VideoView(this);
+        videoView = new AdaptiveVideoView(this);
+        videoView.setResizeMode(resizeMode);
         mediaController = new MediaController(this);
         mediaController.setAnchorView(videoView);
         videoView.setMediaController(mediaController);
         videoView.setOnPreparedListener(mediaPlayer -> {
             try {
+                activeMediaPlayer = mediaPlayer;
+                videoView.setVideoSize(mediaPlayer.getVideoWidth(), mediaPlayer.getVideoHeight());
+                applyAppVolume();
+                applyClarityMode();
                 hideState();
                 if (pendingSeekMs > 0) {
                     videoView.seekTo(pendingSeekMs);
@@ -343,6 +415,118 @@ public class MainActivity extends Activity {
         params.leftMargin = dp(8);
         button.setLayoutParams(params);
         return button;
+    }
+
+    private void restoreSettings() {
+        if (preferences == null) {
+            return;
+        }
+        appVolume = preferences.getFloat("app_volume", 1.0f);
+        resizeMode = preferences.getInt("resize_mode", AdaptiveVideoView.MODE_FIT);
+        clarityMode = preferences.getBoolean("clarity_mode", false);
+    }
+
+    private void saveSettings() {
+        if (preferences == null) {
+            return;
+        }
+        preferences.edit()
+                .putFloat("app_volume", appVolume)
+                .putInt("resize_mode", resizeMode)
+                .putBoolean("clarity_mode", clarityMode)
+                .apply();
+    }
+
+    private void handleIncomingIntent(Intent intent) {
+        if (intent == null) {
+            return;
+        }
+        Uri uri = intent.getData();
+        if (uri == null) {
+            return;
+        }
+        String action = intent.getAction();
+        if (Intent.ACTION_VIEW.equals(action) || Intent.ACTION_SEND.equals(action)) {
+            pendingSeekMs = 0;
+            playUri(uri, displayNameForUri(uri), true);
+        }
+    }
+
+    private void cycleResizeMode() {
+        if (resizeMode == AdaptiveVideoView.MODE_FIT) {
+            resizeMode = AdaptiveVideoView.MODE_CROP;
+        } else if (resizeMode == AdaptiveVideoView.MODE_CROP) {
+            resizeMode = AdaptiveVideoView.MODE_STRETCH;
+        } else if (resizeMode == AdaptiveVideoView.MODE_STRETCH) {
+            resizeMode = AdaptiveVideoView.MODE_ORIGINAL;
+        } else {
+            resizeMode = AdaptiveVideoView.MODE_FIT;
+        }
+        if (videoView != null) {
+            videoView.setResizeMode(resizeMode);
+        }
+        if (resizeModeButton != null) {
+            resizeModeButton.setText(resizeModeText());
+        }
+        saveSettings();
+        showState("画面比例：" + resizeModeText());
+    }
+
+    private String resizeModeText() {
+        if (resizeMode == AdaptiveVideoView.MODE_CROP) {
+            return "填充";
+        }
+        if (resizeMode == AdaptiveVideoView.MODE_STRETCH) {
+            return "拉伸";
+        }
+        if (resizeMode == AdaptiveVideoView.MODE_ORIGINAL) {
+            return "原始";
+        }
+        return "适应";
+    }
+
+    private void toggleClarityMode() {
+        clarityMode = !clarityMode;
+        if (clarityButton != null) {
+            clarityButton.setText(clarityMode ? "清晰开" : "清晰关");
+        }
+        applyClarityMode();
+        saveSettings();
+        showState(clarityMode
+                ? "清晰增强已开启：优化播放缩放和亮屏，不还原打码内容"
+                : "清晰增强已关闭");
+    }
+
+    private void applyAppVolume() {
+        if (activeMediaPlayer == null) {
+            return;
+        }
+        try {
+            activeMediaPlayer.setVolume(appVolume, appVolume);
+        } catch (Throwable throwable) {
+            PlayerApplication.writeCrash(this, throwable);
+        }
+    }
+
+    private void applyClarityMode() {
+        try {
+            if (videoView != null) {
+                videoView.setKeepScreenOn(clarityMode);
+                videoView.setDrawingCacheQuality(View.DRAWING_CACHE_QUALITY_HIGH);
+            }
+            if (activeMediaPlayer != null) {
+                activeMediaPlayer.setScreenOnWhilePlaying(clarityMode);
+                activeMediaPlayer.setVideoScalingMode(MediaPlayer.VIDEO_SCALING_MODE_SCALE_TO_FIT);
+            }
+        } catch (Throwable throwable) {
+            PlayerApplication.writeCrash(this, throwable);
+        }
+    }
+
+    private void updateVolumeText() {
+        if (volumeView != null) {
+            volumeView.setText("音量 " + Math.round(appVolume * 100) + "%");
+        }
     }
 
     private void loadVideosIfPermitted(boolean requestIfNeeded) {
