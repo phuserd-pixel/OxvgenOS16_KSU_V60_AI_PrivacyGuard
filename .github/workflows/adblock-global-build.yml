@@ -1,0 +1,41 @@
+name: AdBlock Global KSU Build
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'AdBlock-Global-KSU/**'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Install build tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake ninja-build zip
+
+      - name: Build module
+        run: |
+          if [ -f AdBlock-Global-KSU/build_release.sh ]; then
+            chmod +x AdBlock-Global-KSU/build_release.sh
+            cd AdBlock-Global-KSU
+            ./build_release.sh
+          else
+            echo 'AdBlock-Global-KSU source directory not found yet'
+            exit 1
+          fi
+
+      - name: Upload ZIP
+        uses: actions/upload-artifact@v4
+        with:
+          name: AdBlock-Global-KSU-release
+          path: '**/*release*.zip'
