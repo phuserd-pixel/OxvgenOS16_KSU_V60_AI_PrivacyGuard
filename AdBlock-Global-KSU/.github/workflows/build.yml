@@ -29,8 +29,13 @@ jobs:
           export ANDROID_NDK_HOME=$ANDROID_NDK_LATEST_HOME
           ./build_release.sh
 
+      - name: Verify ZIP
+        run: |
+          test -f AdBlock-Global-KSU-v1.0-release.zip
+          unzip -l AdBlock-Global-KSU-v1.0-release.zip
+
       - name: Upload KernelSU ZIP
         uses: actions/upload-artifact@v4
         with:
           name: AdBlock-Global-KSU-release
-          path: AdBlock-Global-KSU-v1.0-release.zip
+          path: AdBlock-Global-KSU/AdBlock-Global-KSU-v1.0-release.zip
