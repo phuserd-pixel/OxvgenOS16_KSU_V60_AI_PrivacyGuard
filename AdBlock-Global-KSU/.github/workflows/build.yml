@@ -1,0 +1,24 @@
+name: Build AdBlock Global KSU
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'AdBlock-Global-KSU/**'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build
+        run: |
+          echo Building KernelSU module
+      - name: Package
+        run: |
+          cd AdBlock-Global-KSU
+          zip -r AdBlock-Global-KSU-release.zip .
+      - uses: actions/upload-artifact@v4
+        with:
+          name: AdBlock-Global-KSU-release
+          path: AdBlock-Global-KSU/AdBlock-Global-KSU-release.zip
